@@ -183,7 +183,79 @@ window.addEventListener('unhandledrejection',function(e){
  if(!window.__familyModuleReady)msg.textContent='接続準備エラー: '+String(e.reason?.message||e.reason||'詳細不明');
 });
 })();
-</script><script type="module" id="familyFirebaseModule">
+</script>
+<style id="school-planning-v1-style">
+.school-plan{margin:15px 0;padding:14px;border:1px solid #dfd1eb;background:#fbf8ff;border-radius:14px}
+.school-plan h4{margin:0 0 8px;color:#513b6b}.school-plan label{display:block;font-size:13px;font-weight:650;margin:9px 0 4px}
+.school-plan input,.school-plan select,.school-plan textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cdbed9;border-radius:9px;background:#fff;font:inherit}
+.school-plan textarea{min-height:72px;resize:vertical}.school-plan button{margin-top:10px;padding:9px 15px}
+.school-plan .plan-status{font-size:12px;min-height:18px;color:#5d4773;margin:6px 0 0}
+#planOverview{background:#fff;border:1px solid #e3d7ef;border-radius:16px;padding:15px;margin:15px 0}
+#planOverview .plan-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:8px}
+#planOverview .plan-choice{background:#f8f3fc;border-radius:10px;padding:11px}
+#familyDifference{margin-top:15px;border-top:1px solid #e8ddec;padding-top:12px}
+#familyDifference table{min-width:400px}
+</style>
+<script id="school-planning-v1">
+(function(){
+const cards=[...document.querySelectorAll('article.card[data-name]')];
+const schoolNames=cards.map(c=>c.dataset.name);
+const overview=document.createElement('section');
+overview.id='planOverview';
+overview.innerHTML='<h2>🎯 志望校候補・学校見学</h2><p>志望順位と見学メモは、ログイン中の本人の評価データに保存されます。</p><div class="plan-choices" id="planChoices"></div>';
+const main=document.querySelector('main');
+if(main){const toolbar=main.querySelector('.toolbar');if(toolbar)toolbar.insertAdjacentElement('afterend',overview)}
+const get=()=>window.getCurrentRatings?.()||{};
+const fields=[['visitDate','見学日','date'],['visitImpression','学校の雰囲気・印象','textarea'],['visitCommute','通学・交通の印象','textarea'],['visitQuestions','気になった点・質問','textarea']];
+for(const card of cards){
+ const name=card.dataset.name,box=document.createElement('section');
+ box.className='school-plan';
+ const title=document.createElement('h4');title.textContent='🏫 学校見学・志望校メモ';box.append(title);
+ const rankLabel=document.createElement('label');rankLabel.textContent='志望順位（仮登録）';box.append(rankLabel);
+ const rank=document.createElement('select');rank.dataset.planRank=name;
+ for(const [value,text] of [['','未設定'],['1','第1志望'],['2','第2志望'],['3','第3志望']]){const o=document.createElement('option');o.value=value;o.textContent=text;rank.append(o)}
+ box.append(rank);
+ for(const [key,label,type] of fields){
+  const l=document.createElement('label');l.textContent=label;box.append(l);
+  const el=type==='textarea'?document.createElement('textarea'):document.createElement('input');
+  if(type!=='textarea')el.type=type;
+  el.dataset.planField=key;el.dataset.planSchool=name;
+  if(type==='textarea')el.placeholder=key==='visitImpression'?'先生・生徒・校風など':key==='visitCommute'?'駅からの道、所要時間など':'確認したいことを記録';
+  box.append(el);
+ }
+ const btn=document.createElement('button');btn.type='button';btn.textContent='見学メモを保存';box.append(btn);
+ const status=document.createElement('p');status.className='plan-status';status.setAttribute('role','status');box.append(status);
+ btn.onclick=()=>{const v=get()[name]??={};for(const [key] of fields)v[key]=box.querySelector('[data-plan-field="'+key+'"]').value.trim().slice(0,2000);window.saveFamilyRatings?.(get());status.textContent='保存を送信しました。上部の同期表示で結果を確認してください。';};
+ rank.onchange=()=>{
+  const d=get(),value=rank.value;
+  if(value){for(const [n,v] of Object.entries(d))if(n!==name&&String(v?.wishRank||'')===value)v.wishRank=''}
+  (d[name]??={}).wishRank=value;
+  window.saveFamilyRatings?.(d);refresh();status.textContent='志望順位の保存を送信しました。';
+ };
+ card.append(box);
+}
+function refresh(){
+ const d=get();
+ for(const card of cards){
+  const n=card.dataset.name,v=d[n]||{},box=card.querySelector('.school-plan');
+  if(!box)continue;
+  const rank=box.querySelector('[data-plan-rank]');if(document.activeElement!==rank)rank.value=String(v.wishRank||'');
+  for(const [key] of fields){const el=box.querySelector('[data-plan-field="'+key+'"]');if(document.activeElement!==el)el.value=v[key]||''}
+ }
+ const target=document.getElementById('planChoices');if(!target)return;
+ target.replaceChildren();
+ for(let rank=1;rank<=3;rank++){
+  const n=schoolNames.find(n=>String(d[n]?.wishRank||'')===String(rank));
+  const el=document.createElement('div');el.className='plan-choice';
+  const strong=document.createElement('strong');strong.textContent='第'+rank+'志望';el.append(strong);
+  const val=document.createElement('div');val.textContent=n||'未登録';el.append(val);target.append(el);
+ }
+}
+document.addEventListener('ratings-updated',refresh);
+refresh();
+})();
+</script>
+<script type="module" id="familyFirebaseModule">
 const $=id=>document.getElementById(id);
 const gate=$('familyGate'),msg=$('familyMessage'),setup=$('familySetup');
 let auth,db,fs,au,current=null,role='',profile={},unsub=[],familyUsers={};
@@ -280,6 +352,27 @@ async function renderComparison(){
  for(const name of names){const tr=document.createElement('tr');let cell=document.createElement('td');cell.textContent=name;tr.append(cell);for(const r of (role==='daughter'?['father','mother']:roles)){cell=document.createElement('td');if(role==='daughter'&&!familyUsers[r]?.shareWithDaughter){cell.textContent='非公開';tr.append(cell);continue}let v=all[r]?.[name]||{};let scores=['overall','uniform','atmosphere','club','events','study','commute'].map(k=>Number(v[k]||0)).filter(x=>x>0);cell.textContent=scores.length?(scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1)+' / 5'+(v.fav?' ♥':''):'—';cell.title=v.note||'';tr.append(cell)}table.append(tr)}
  if(token!==comparisonRenderToken || $('familyCompare').hidden)return;
  $('familyComparisonTable').replaceChildren(table);
+ if(role!=='daughter'){
+  const wrap=document.createElement('div');wrap.id='familyDifference';
+  const h=document.createElement('h3');h.textContent='📊 家族の評価差が大きい学校';wrap.append(h);
+  const rows=[];
+  for(const name of names){
+   const entries=roles.map(r=>({r,v:all[r]?.[name]||{}})).map(({r,v})=>{
+    const a=['overall','uniform','atmosphere','club','events','study','commute'].map(k=>Number(v[k]||0)).filter(x=>x>0);
+    return {r,avg:a.length?a.reduce((x,y)=>x+y,0)/a.length:null};
+   }).filter(x=>x.avg!==null);
+   if(entries.length<2)continue;
+   const gap=Math.max(...entries.map(x=>x.avg))-Math.min(...entries.map(x=>x.avg));
+   rows.push({name,gap,entries});
+  }
+  rows.sort((a,b)=>b.gap-a.gap);
+  const desc=document.createElement('p');desc.textContent='2人以上が評価した学校の平均点差です。評価項目数が異なる場合は参考値として見てください。';wrap.append(desc);
+  const t=document.createElement('table');
+  const hd=document.createElement('tr');for(const x of ['学校','最大点差','評価した家族']){const th=document.createElement('th');th.textContent=x;hd.append(th)}t.append(hd);
+  for(const row of rows.slice(0,8)){const tr=document.createElement('tr');for(const x of [row.name,row.gap.toFixed(1)+'点',row.entries.map(e=>roleName[e.r]+' '+e.avg.toFixed(1)).join(' / ')]){const td=document.createElement('td');td.textContent=x;tr.append(td)}t.append(tr)}
+  if(!rows.length){const p=document.createElement('p');p.textContent='2人以上が評価した学校ができると、ここに表示されます。';wrap.append(p)}else wrap.append(t);
+  $('familyComparisonTable').append(wrap);
+ }
 }
 $('familyCompareToggle').onclick=()=>{let p=$('familyCompare');p.hidden=!p.hidden;if(!p.hidden)renderComparison();else comparisonRenderToken++};
 $('familyLogout').onclick=()=>auth&&au.signOut(auth);
