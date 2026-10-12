@@ -191,7 +191,7 @@ async function init(c){
  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js'),
  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js')]);
  const app=appMod.initializeApp(c);au=authMod;fs=fireMod;auth=au.getAuth(app);db=fs.getFirestore(app);
- au.onAuthStateChanged(auth,async u=>{clearListeners();current=null;role='';profile={};window.setCurrentRatings({});$('familyCompare').hidden=true;$('familyToolbar').hidden=true;gate.hidden=false;if(!u){message('メールアドレスとパスワードを入力してください。');return}try{
+ au.onAuthStateChanged(auth,async u=>{clearListeners();current=null;role='';profile={};window.setCurrentRatings({});$('familyCompare').hidden=true;$('familyToolbar').hidden=true;gate.hidden=false;if(!u){message('ログインしてください。');return}try{
  // UID-based user document; do not infer role from email or client input.
  const snap=await fs.getDoc(fs.doc(db,'users',u.uid));if(!snap.exists())throw Error('users/'+u.uid+' にユーザー情報がありません。Firestoreの登録IDを確認してください。');
  profile=snap.data();role=normalizeRole(profile.role);if(!role)throw Error('users の role が father / mother / daughter のいずれでもありません（現在値：'+String(profile.role)+'）。');
@@ -230,6 +230,6 @@ async function renderComparison(){
 }
 $('familyCompareToggle').onclick=()=>{let p=$('familyCompare');p.hidden=!p.hidden;if(!p.hidden)renderComparison()};
 $('familyLogout').onclick=()=>auth&&au.signOut(auth);
-$('familyLoginForm').onsubmit=async e=>{e.preventDefault();if(!auth){message('先にFirebase接続設定を保存してください');return}const b=$('familyLoginButton');b.disabled=true;message('ログイン中…');try{await au.signInWithEmailAndPassword(auth,$('familyEmail').value.trim(),$('familyPassword').value);$('familyPassword').value=''}catch(err){message('ログインできません: '+err.message)}finally{b.disabled=false}};
+$('familyLoginForm').onsubmit=async e=>{e.preventDefault();const email=$('familyEmail').value.trim();const password=$('familyPassword').value;if(!email||!password){message('入力欄を確認してください（メール: '+(email?'入力済':'未入力')+'／パスワード: '+(password?'入力済':'未入力')+'）');return}if(!auth){message('Firebase接続を準備中です。少し待ってからもう一度押してください。');return}const b=$('familyLoginButton');b.disabled=true;message('ログイン中…');try{await au.signInWithEmailAndPassword(auth,email,password);$('familyPassword').value=''}catch(err){message('ログインできません: '+err.message)}finally{b.disabled=false}};
 window.__familyModuleReady=true;message('Firebaseへ接続中…');const c=readConfig();if(validConfig(c))init(c).catch(e=>{message('Firebase接続に失敗: '+e.message)});else message('Firebaseの設定がありません。');
 </script>
