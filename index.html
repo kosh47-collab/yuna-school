@@ -191,7 +191,7 @@ async function init(c){
  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js'),
  import('https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js')]);
  const app=appMod.initializeApp(c);au=authMod;fs=fireMod;auth=au.getAuth(app);db=fs.getFirestore(app);
- au.onAuthStateChanged(auth,async u=>{clearListeners();current=null;role='';profile={};window.setCurrentRatings({});$('familyCompare').hidden=true;$('familyToolbar').hidden=true;gate.hidden=false;if(!u){message('ログインしてください。');return}try{
+ au.onAuthStateChanged(auth,async u=>{clearListeners();current=null;role='';profile={};window.setCurrentRatings({});$('familyCompare').hidden=true;$('familyToolbar').hidden=true;gate.hidden=false;if(!u){message('ログインしてください。');return}message('認証成功。ユーザー情報を確認中…');try{
  // UID-based user document; do not infer role from email or client input.
  const snap=await fs.getDoc(fs.doc(db,'users',u.uid));if(!snap.exists())throw Error('users/'+u.uid+' にユーザー情報がありません。Firestoreの登録IDを確認してください。');
  profile=snap.data();role=normalizeRole(profile.role);if(!role)throw Error('users の role が father / mother / daughter のいずれでもありません（現在値：'+String(profile.role)+'）。');
@@ -201,7 +201,7 @@ async function init(c){
  unsub.push(fs.onSnapshot(ratingRef,s=>{window.setCurrentRatings(s.exists()?(s.data().schools||{}):{});status('評価を同期しました')},e=>status('読み取りエラー: '+e.message)));
  window.saveFamilyRatings=async ratings=>{if(!current)return;status('保存中…');try{await fs.setDoc(ratingRef,{ownerUid:u.uid,schools:structuredClone(ratings),updatedAt:fs.serverTimestamp()},{merge:true});status('保存しました')}catch(e){status('保存失敗: '+e.message)}};
  if(role!=='daughter')loadParentPanel();
- }catch(e){message('ログイン後の設定確認が必要です: '+e.message);await au.signOut(auth)}});
+ }catch(e){current=null;role='';gate.hidden=false;$('familyToolbar').hidden=false;$('familyIdentity').textContent='Firebase認証済み（設定確認中）';$('familyCompareToggle').hidden=true;message('パスワード認証は成功しました。ただしユーザー情報の読み込みに失敗しました: '+e.message+' ／ FirebaseのusersコレクションとFirestoreルールを確認してください。');console.error('Firestore profile load failed',e)}});
 }
 function clearListeners(){unsub.forEach(f=>f());unsub=[];window.saveFamilyRatings=null}
 async function loadParentPanel(){
