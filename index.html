@@ -195,12 +195,12 @@ async function init(c){
  // UID-based user document; do not infer role from email or client input.
  const snap=await fs.getDoc(fs.doc(db,'users',u.uid));if(!snap.exists())throw Error('users/'+u.uid+' にユーザー情報がありません。Firestoreの登録IDを確認してください。');
  profile=snap.data();role=normalizeRole(profile.role);if(!role)throw Error('users の role が father / mother / daughter のいずれでもありません（現在値：'+String(profile.role)+'）。');
- current=u;gate.hidden=true;$('familyToolbar').hidden=false;$('familyIdentity').textContent=(roleName[role]||role)+'としてログイン中';$('familyCompareToggle').hidden=role==='daughter';status('評価を読み込み中…');
+ current=u;gate.hidden=true;$('familyToolbar').hidden=false;$('familyIdentity').textContent=(roleName[role]||role)+'としてログイン中';$('familyCompareToggle').hidden=false;$('familyCompareToggle').textContent=role==='daughter'?'公開された家族の評価':'家族評価の比較・公開設定';status('評価を読み込み中…');
  // Personal ratings, one document per Firebase Auth UID.
  const ratingRef=fs.doc(db,'ratings',u.uid);
  unsub.push(fs.onSnapshot(ratingRef,s=>{window.setCurrentRatings(s.exists()?(s.data().schools||{}):{});status('評価を同期しました')},e=>status('読み取りエラー: '+e.message)));
  window.saveFamilyRatings=async ratings=>{if(!current)return;status('保存中…');try{await fs.setDoc(ratingRef,{ownerUid:u.uid,schools:structuredClone(ratings),updatedAt:fs.serverTimestamp()},{merge:true});status('保存しました')}catch(e){status('保存失敗: '+e.message)}};
- if(role!=='daughter')loadParentPanel();
+ if(role!=='daughter')loadParentPanel();else loadDaughterPanel();
  }catch(e){current=null;role='';gate.hidden=false;$('familyToolbar').hidden=false;$('familyIdentity').textContent='Firebase認証済み（設定確認中）';$('familyCompareToggle').hidden=true;message('パスワード認証は成功しました。ただしユーザー情報の読み込みに失敗しました: '+e.message+' ／ FirebaseのusersコレクションとFirestoreルールを確認してください。');console.error('Firestore profile load failed',e)}});
 }
 function clearListeners(){unsub.forEach(f=>f());unsub=[];window.saveFamilyRatings=null}
@@ -212,23 +212,47 @@ async function loadParentPanel(){
  renderComparison();
  }catch(e){$('familyComparisonTable').textContent='家族情報を取得できません: '+e.message}
 }
+async function loadDaughterPanel(){
+ try{
+  const cfg=await fs.getDoc(fs.doc(db,'family','config'));
+  if(!cfg.exists())throw Error('family/config が未登録です。');
+  const ids=cfg.data();familyUsers={};
+  for(const r of ['father','mother']){
+   if(typeof ids[r]!=='string'||!ids[r])throw Error('family/config の '+r+' が未設定です。');
+   const p=await fs.getDoc(fs.doc(db,'users',ids[r]));
+   if(!p.exists()||normalizeRole(p.data().role)!==r)throw Error(r+' のユーザー設定を確認してください。');
+   familyUsers[r]={uid:ids[r],...p.data()};
+  }
+  for(const r of ['father','mother']){
+   const u=familyUsers[r];
+   unsub.push(fs.onSnapshot(fs.doc(db,'users',u.uid),snap=>{
+     if(!snap.exists())return;
+     familyUsers[r]={uid:u.uid,...snap.data()};
+     // Refresh from Firestore on each panel render; never retain a revoked rating subscription.
+     if(!$('familyCompare').hidden)renderComparison();
+   },e=>status('公開設定の確認に失敗: '+e.message)));
+  }
+ }catch(e){$('familyComparisonTable').textContent='家族の公開設定を読み込めません: '+e.message;status('家族設定エラー: '+e.message)}
+}
+let comparisonRenderToken=0;
 async function renderComparison(){
- if(role==='daughter')return;
+ const token=++comparisonRenderToken;
  const panel=$('familyPermission');panel.replaceChildren();
  for(const r of ['father','mother']){
- const u=familyUsers[r];if(!u)continue;
+ const u=familyUsers[r];if(!u||role==='daughter')continue;
  const label=document.createElement('label');label.style.cssText='display:inline-flex;gap:6px;align-items:center;margin:8px 18px 12px 0';
  const ck=document.createElement('input');ck.type='checkbox';ck.checked=!!u.shareWithDaughter;ck.disabled=role!==r;
  ck.onchange=async()=>{ck.disabled=true;try{await fs.updateDoc(fs.doc(db,'users',u.uid),{shareWithDaughter:ck.checked});u.shareWithDaughter=ck.checked}catch(e){alert('公開設定の変更に失敗: '+e.message);ck.checked=!ck.checked}finally{ck.disabled=role!==r}};
  label.append(ck,document.createTextNode(roleName[r]+'の評価を娘に公開'));panel.append(label);
  }
- const all={};for(const r of roles){if(!familyUsers[r])continue;try{const d=await fs.getDoc(fs.doc(db,'ratings',familyUsers[r].uid));all[r]=d.exists()?(d.data().schools||{}):{}}catch(e){all[r]={};status('一部の家族評価を取得できません: '+e.message)}}
+ const all={};for(const r of roles){if(role==='daughter'&&r==='daughter')continue;if(!familyUsers[r])continue;if(role==='daughter'&&!familyUsers[r].shareWithDaughter)continue;try{const d=await fs.getDoc(fs.doc(db,'ratings',familyUsers[r].uid));all[r]=d.exists()?(d.data().schools||{}):{}}catch(e){all[r]={};status('一部の家族評価を取得できません: '+e.message)}}
  const names=[...document.querySelectorAll('article.card[data-name]')].map(x=>x.dataset.name);
- const table=document.createElement('table');const head=document.createElement('tr');['学校','父','母','娘'].forEach(t=>{let th=document.createElement('th');th.textContent=t;head.append(th)});table.append(head);
- for(const name of names){const tr=document.createElement('tr');let cell=document.createElement('td');cell.textContent=name;tr.append(cell);for(const r of roles){cell=document.createElement('td');let v=all[r]?.[name]||{};let scores=['overall','uniform','atmosphere','club','events','study','commute'].map(k=>Number(v[k]||0)).filter(x=>x>0);cell.textContent=scores.length?(scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1)+' / 5'+(v.fav?' ♥':''):'—';cell.title=v.note||'';tr.append(cell)}table.append(tr)}
+ const table=document.createElement('table');const head=document.createElement('tr');(role==='daughter'?['学校','父','母']:['学校','父','母','娘']).forEach(t=>{let th=document.createElement('th');th.textContent=t;head.append(th)});table.append(head);
+ for(const name of names){const tr=document.createElement('tr');let cell=document.createElement('td');cell.textContent=name;tr.append(cell);for(const r of (role==='daughter'?['father','mother']:roles)){cell=document.createElement('td');if(role==='daughter'&&!familyUsers[r]?.shareWithDaughter){cell.textContent='非公開';tr.append(cell);continue}let v=all[r]?.[name]||{};let scores=['overall','uniform','atmosphere','club','events','study','commute'].map(k=>Number(v[k]||0)).filter(x=>x>0);cell.textContent=scores.length?(scores.reduce((a,b)=>a+b,0)/scores.length).toFixed(1)+' / 5'+(v.fav?' ♥':''):'—';cell.title=v.note||'';tr.append(cell)}table.append(tr)}
+ if(token!==comparisonRenderToken || $('familyCompare').hidden)return;
  $('familyComparisonTable').replaceChildren(table);
 }
-$('familyCompareToggle').onclick=()=>{let p=$('familyCompare');p.hidden=!p.hidden;if(!p.hidden)renderComparison()};
+$('familyCompareToggle').onclick=()=>{let p=$('familyCompare');p.hidden=!p.hidden;if(!p.hidden)renderComparison();else comparisonRenderToken++};
 $('familyLogout').onclick=()=>auth&&au.signOut(auth);
 $('familyLoginForm').onsubmit=async e=>{e.preventDefault();const email=$('familyEmail').value.trim();const password=$('familyPassword').value;if(!email||!password){message('入力欄を確認してください（メール: '+(email?'入力済':'未入力')+'／パスワード: '+(password?'入力済':'未入力')+'）');return}if(!auth){message('Firebase接続を準備中です。少し待ってからもう一度押してください。');return}const b=$('familyLoginButton');b.disabled=true;message('ログイン中…');try{await au.signInWithEmailAndPassword(auth,email,password);$('familyPassword').value=''}catch(err){message('ログインできません: '+err.message)}finally{b.disabled=false}};
 window.__familyModuleReady=true;message('Firebaseへ接続中…');const c=readConfig();if(validConfig(c))init(c).catch(e=>{message('Firebase接続に失敗: '+e.message)});else message('Firebaseの設定がありません。');
