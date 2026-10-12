@@ -2,6 +2,17 @@
 <div id="familyGate"><section class="familyBox"><h2>🏫 ログイン</h2><p>昨日登録したFirebase Authenticationのメールアドレスとパスワードでログインしてね。</p><form id="familyLoginForm"><label for="familyEmail">メールアドレス</label><input id="familyEmail" type="email" autocomplete="username" required><label for="familyPassword">パスワード</label><input id="familyPassword" type="password" autocomplete="current-password" required><p><button type="submit" id="familyLoginButton">ログイン</button></p></form><p id="familyMessage" role="status"></p></section></div>
 <div id="familyToolbar" class="familyToolbar" hidden><span id="familyIdentity">ログイン中</span><span class="familyStatus" id="familySyncStatus"></span><button id="familyCompareToggle" hidden>家族評価の比較・公開設定</button><button id="familyLogout">ログアウト</button></div><section id="familyCompare" class="familyCompare" hidden><h2>家族の評価比較</h2><div id="familyPermission"></div><div class="scroll" id="familyComparisonTable"></div></section><style id="family-login-style">
 #familyGate{position:fixed;inset:0;z-index:999999;background:#f9f6fc;overflow:auto;display:grid;place-items:center;padding:20px;font-family:system-ui,sans-serif}#familyGate[hidden]{display:none!important}.familyBox{background:white;border:1px solid #e8e1ed;border-radius:18px;box-shadow:0 10px 35px #40304c20;padding:24px;width:min(100%,460px);color:#352b41}.familyBox h2{margin:0 0 10px;font-size:23px}.familyBox label{display:block;margin:12px 0 4px;font-weight:600}.familyBox input,.familyBox textarea{width:100%;box-sizing:border-box;padding:12px;border:1px solid #bdb2c9;border-radius:9px;font:inherit}.familyBox button,.familyToolbar button,.familyBox .familyBtn{background:#74518f;color:white;border:0;border-radius:9px;padding:10px 14px;font:inherit;cursor:pointer}.familyBox button:disabled{opacity:.5}.familyBox p{line-height:1.65}.familyToolbar{position:sticky;top:0;z-index:100;background:#f5effa;border-bottom:1px solid #e4d7ef;padding:10px 15px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}.familyToolbar[hidden]{display:none!important}.familyToolbar button{padding:7px 12px}.familyStatus{font-size:13px;color:#6a5878}.familyCompare{max-width:1100px;margin:14px auto;padding:18px;border:1px solid #e3d5ec;border-radius:12px;background:white}.familyCompare[hidden]{display:none!important}.familyCompare table{border-collapse:collapse;width:100%;font-size:13px}.familyCompare th,.familyCompare td{padding:8px;border-bottom:1px solid #eee;text-align:left}.familyCompare .scroll{overflow-x:auto}.familyCompare button{padding:8px 12px;border-radius:8px;border:1px solid #ad91be;background:#f8f2fc}.familyCompare h2{margin:0 0 10px}
+</style><style id="family-comparison-improvements">
+.familyCompare .scroll{max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.familyCompare table{min-width:420px;width:100%;font-size:clamp(12px,3vw,14px);font-variant-numeric:tabular-nums}
+.familyCompare th,.familyCompare td{padding:11px 9px;white-space:nowrap}
+.familyCompare th:first-child,.familyCompare td:first-child{position:sticky;left:0;background:#fff;z-index:2;min-width:95px}
+.familyCompare th{background:#f4edf9;font-weight:700}
+.familyCompare th:first-child{background:#f4edf9;z-index:3}
+.familyCompare tr:nth-child(even) td{background:#fcf9ff}
+.familyCompare tr:nth-child(even) td:first-child{background:#fcf9ff}
+.familyCompare input[type=checkbox]{width:19px;height:19px;accent-color:#74518f}
+@media(max-width:600px){.familyCompare{margin:10px;padding:12px}.familyToolbar{gap:8px}.familyToolbar button{font-size:13px}}
 </style><style>/* 写真周囲の装飾枠を削除 */.school-photo-placeholder{border:0!important;background:transparent!important;border-radius:0!important;box-shadow:none!important;padding:0!important;margin:12px 0!important}.school-photo-local{border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}</style><style>.school-photo-local{display:block;width:100%;max-width:760px;height:auto;max-height:420px;object-fit:contain;margin:0 auto;border-radius:10px;background:#fff}.school-photo-placeholder{padding:10px}.school-photo-placeholder:has(.school-photo-local[style*="display: none"]) .school-photo-source{display:block!important}</style><style>.school-photo-placeholder{padding:18px;margin:12px 0;background:#f8f4ff;border:1px solid #e9dff3;border-radius:12px;text-align:center}.school-photo-source{font-size:14px;line-height:1.6}</style><style>
 #allSchoolMap{background:#fff;padding:16px;border-radius:18px;margin:20px 0}
 .mapIntro,.mapNote{font-size:13px;color:#64596c}.mapNote{line-height:1.65}
@@ -206,7 +217,16 @@ async function init(c){
 function clearListeners(){unsub.forEach(f=>f());unsub=[];window.saveFamilyRatings=null}
 async function loadParentPanel(){
  try{
- const qs=await fs.getDocs(fs.collection(db,'users'));familyUsers={};qs.forEach(d=>{const r=normalizeRole(d.data().role);if(r)familyUsers[r]={uid:d.id,...d.data()}});
+ const cfg=await fs.getDoc(fs.doc(db,'family','config'));
+ if(!cfg.exists())throw Error('family/config が未登録です。');
+ familyUsers={};
+ for(const r of roles){
+   const uid=cfg.data()[r];
+   if(typeof uid!=='string'||!uid)throw Error('family/config の '+r+' が未設定です。');
+   const d=await fs.getDoc(fs.doc(db,'users',uid));
+   if(!d.exists()||normalizeRole(d.data().role)!==r)throw Error(r+' のユーザー設定を確認してください。');
+   familyUsers[r]={uid,...d.data()};
+ }
  if(roles.some(r=>!familyUsers[r])){$('familyComparisonTable').textContent='users に父・母・娘の3件（各ドキュメントIDはAuthentication UID）が必要です。';return}
  for(const r of roles){const uid=familyUsers[r].uid;unsub.push(fs.onSnapshot(fs.doc(db,'ratings',uid),()=>renderComparison(),e=>status('家族評価の読み取りエラー: '+e.message)))}
  renderComparison();
@@ -216,7 +236,7 @@ async function loadDaughterPanel(){
  try{
   const cfg=await fs.getDoc(fs.doc(db,'family','config'));
   if(!cfg.exists())throw Error('family/config が未登録です。');
-  const ids=cfg.data();familyUsers={};
+  const ids=cfg.data();familyUsers={daughter:{uid:current.uid,...profile}};
   for(const r of ['father','mother']){
    if(typeof ids[r]!=='string'||!ids[r])throw Error('family/config の '+r+' が未設定です。');
    const p=await fs.getDoc(fs.doc(db,'users',ids[r]));
@@ -238,11 +258,20 @@ let comparisonRenderToken=0;
 async function renderComparison(){
  const token=++comparisonRenderToken;
  const panel=$('familyPermission');panel.replaceChildren();
+ const feedback=document.createElement('p');
+ feedback.setAttribute('role','status');
+ feedback.style.cssText='font-size:13px;color:#625274;margin:5px 0';
+ if(role!=='daughter'){feedback.textContent='公開設定は各保護者が自分の分だけ変更できます。';panel.append(feedback)}
  for(const r of ['father','mother']){
  const u=familyUsers[r];if(!u||role==='daughter')continue;
  const label=document.createElement('label');label.style.cssText='display:inline-flex;gap:6px;align-items:center;margin:8px 18px 12px 0';
  const ck=document.createElement('input');ck.type='checkbox';ck.checked=!!u.shareWithDaughter;ck.disabled=role!==r;
- ck.onchange=async()=>{ck.disabled=true;try{await fs.updateDoc(fs.doc(db,'users',u.uid),{shareWithDaughter:ck.checked});u.shareWithDaughter=ck.checked}catch(e){alert('公開設定の変更に失敗: '+e.message);ck.checked=!ck.checked}finally{ck.disabled=role!==r}};
+ ck.onchange=async()=>{ck.disabled=true;feedback.textContent='公開設定を保存中…';try{
+ await fs.updateDoc(fs.doc(db,'users',u.uid),{shareWithDaughter:ck.checked});
+ u.shareWithDaughter=ck.checked;
+ feedback.textContent=ck.checked?'娘への公開設定を保存しました。':'非公開設定を保存しました。';
+ status('公開設定を保存しました');
+ }catch(e){feedback.textContent='保存失敗: '+e.message;ck.checked=!ck.checked;status('公開設定の保存に失敗しました')}finally{ck.disabled=role!==r}};
  label.append(ck,document.createTextNode(roleName[r]+'の評価を娘に公開'));panel.append(label);
  }
  const all={};for(const r of roles){if(role==='daughter'&&r==='daughter')continue;if(!familyUsers[r])continue;if(role==='daughter'&&!familyUsers[r].shareWithDaughter)continue;try{const d=await fs.getDoc(fs.doc(db,'ratings',familyUsers[r].uid));all[r]=d.exists()?(d.data().schools||{}):{}}catch(e){all[r]={};status('一部の家族評価を取得できません: '+e.message)}}
